@@ -1,0 +1,24 @@
+{
+	"FileVersion": 1,
+	"Version": 0,
+	"VersionName": "0.0",
+	"FriendlyName": "Irisland",
+	"Description": "Iris integration for Unreal Engine.",
+	"Category": "Other",
+	"CreatedBy": "PaintDream",
+	"CreatedByURL": "https://github.com/paintdream/Irisland",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "Irisland",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}
