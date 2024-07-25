@@ -5,7 +5,7 @@ This software is a C++ 11 Header-Only reimplementation of core part from project
 
 The MIT License (MIT)
 
-Copyright (c) 2014-2023 PaintDream
+Copyright (c) 2014-2024 PaintDream
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -84,6 +84,14 @@ SOFTWARE.
 
 #ifndef IRIS_ASSERT
 #define IRIS_ASSERT assert
+#endif
+
+#ifndef IRIS_LOGERROR
+#define IRIS_LOGERROR(...) fprintf(stderr, __VA_ARGS__)
+#endif
+
+#ifndef IRIS_LOGINFO
+#define IRIS_LOGINFO(...) printf(__VA_ARGS__)
 #endif
 
 namespace iris {
@@ -337,15 +345,9 @@ namespace iris {
 	struct iris_is_reference_wrapper<std::reference_wrapper<type_t>> : std::true_type {};
 
 	template <typename type_t>
-	constexpr bool iris_is_reference_wrapper_v = iris_is_reference_wrapper<type_t>::value;
-
-	template <typename type_t>
 	struct iris_is_iterable<type_t,
 		iris_void_t<decltype(std::begin(std::declval<type_t>())), decltype(std::end(std::declval<type_t>()))>
 	> : std::true_type {};
-
-	template <typename type_t>
-	constexpr bool iris_is_iterable_v = iris_is_iterable<type_t>::value;
 
 	template <typename type_t, typename = void>
 	struct iris_is_map : std::false_type {};
@@ -353,26 +355,17 @@ namespace iris {
 	template <typename type_t>
 	struct iris_is_map<type_t, iris_void_t<typename type_t::mapped_type>> : std::true_type {};
 
-	template <typename type_t>
-	constexpr bool iris_is_map_v = iris_is_map<type_t>::value;
-
 	template <typename type_t, typename = void>
 	struct iris_is_tuple : std::false_type {};
 
 	template <typename type_t>
 	struct iris_is_tuple<type_t, iris_void_t<typename std::tuple_size<type_t>::value_type>> : std::true_type {};
 
-	template <typename type_t>
-	constexpr bool iris_is_tuple_v = iris_is_tuple<type_t>::value;
-
 	template <typename type_t, typename = void>
 	struct iris_is_coroutine : std::false_type {};
 
 	template <typename type_t>
 	struct iris_is_coroutine<type_t, iris_void_t<typename type_t::promise_type>> : std::true_type {};
-
-	template <typename type_t>
-	constexpr bool iris_is_coroutine_v = iris_is_coroutine<type_t>::value;
 
 	template <typename value_t>
 	constexpr value_t iris_get_alignment(value_t a) noexcept {
@@ -526,6 +519,37 @@ namespace iris {
 		}
 	}
 
+	template <typename type_t, typename index_t>
+	void iris_union_set_init(type_t&& vec, index_t from, index_t to) {
+		while (from != to) {
+			vec[from] = from;
+			from++;
+		}
+	}
+
+	template <typename type_t, typename index_t>
+	index_t iris_union_set_find(type_t&& vec, index_t pos) {
+		index_t next = pos;
+		if (next != vec[next]) {
+			do {
+				next = vec[next];
+			} while (next != vec[next]);
+
+			while (pos != next) {
+				index_t i = vec[pos];
+				vec[pos] = next;
+				pos = i;
+			}
+		}
+
+		return next;
+	}
+
+	template <typename type_t, typename index_t>
+	void iris_union_set_join(type_t&& vec, index_t from, index_t to) {
+		vec[iris_union_set_find(vec, to)] = iris_union_set_find(vec, from);
+	}
+
 	extern IRIS_SHARED_LIBRARY_DECORATOR void* iris_alloc_aligned(size_t size, size_t alignment);
 	extern IRIS_SHARED_LIBRARY_DECORATOR void iris_free_aligned(void* data, size_t size) noexcept;
 
@@ -634,13 +658,11 @@ namespace iris {
 	// k = element size, m = block size, r = max recycled block count, 0 for not limited, w = control block count
 	template <size_t k, size_t m = default_block_size, size_t r = 8, size_t s = default_page_size / m, size_t w = 8>
 	struct iris_allocator_t : protected enable_read_write_fence_t<> {
-		enum {
-			block_size = m,
-			item_count = m / k,
-			bits = 8 * sizeof(size_t),
-			bitmap_block_size = (item_count + bits - 1) / bits,
-			mask = bits - 1
-		};
+		static constexpr size_t block_size = m;
+		static constexpr size_t item_count = m / k;
+		static constexpr size_t bits = 8 * sizeof(size_t);
+		static constexpr size_t bitmap_block_size = (item_count + bits - 1) / bits;
+		static constexpr size_t mask = bits - 1;
 
 		struct control_block_t {
 			iris_allocator_t* allocator;
@@ -650,9 +672,7 @@ namespace iris {
 			std::atomic<size_t> bitmap[bitmap_block_size];
 		};
 
-		enum {
-			offset = (sizeof(control_block_t) + k - 1) / k
-		};
+		static constexpr size_t offset = (sizeof(control_block_t) + k - 1) / k;
 
 		iris_allocator_t() noexcept {
 			static_assert(item_count / 2 * k > sizeof(control_block_t), "item_count is too small");
@@ -1081,7 +1101,7 @@ namespace iris {
 		allocator_t& allocator;
 	};
 
-	template <typename element_t, size_t alloc_size = default_block_size, size_t page_size = default_page_size / default_block_size, template <typename...> typename single_allocator_t = std::allocator>
+	template <typename element_t, size_t alloc_size = default_block_size, size_t page_size = default_page_size / default_block_size, template <typename...> class single_allocator_t = std::allocator>
 	struct iris_block_allocator_t : single_allocator_t<element_t> {
 		using value_type = element_t;
 		using pointer = element_t*;
@@ -1144,7 +1164,7 @@ namespace iris {
 	template <typename element_t>
 	using iris_default_relaxed_shared_object_allocator_t = iris_relaxed_shared_object_allocator_t<element_t>;
 
-	template <typename element_t, template <typename...> typename allocator_t>
+	template <typename element_t, template <typename...> class allocator_t>
 	struct iris_extract_block_size {
 		static constexpr size_t value = allocator_t<element_t>::block_size;
 	};
@@ -1162,7 +1182,7 @@ namespace iris {
 	}
 
 	// basic queue structure for tasks or stream-based data structures
-	template <typename value_t, template <typename...> typename allocator_t = iris_default_block_allocator_t, bool enable_memory_fence = true, template <typename...> typename _allocator_t = allocator_t>
+	template <typename value_t, template <typename...> class allocator_t = iris_default_block_allocator_t, bool enable_memory_fence = true, template <typename...> class _allocator_t = allocator_t>
 	struct iris_queue_t : private allocator_t<impl::element_slot_t<value_t>>, protected enable_in_out_fence_t<> {
 		using element_t = value_t;
 		using storage_t = impl::element_slot_t<element_t>;
@@ -1188,12 +1208,15 @@ namespace iris {
 
 		iris_queue_t& operator = (const iris_queue_t& rhs) = delete;
 		iris_queue_t& operator = (iris_queue_t&& rhs) noexcept {
-			static_cast<node_allocator_t&>(*this) = std::move(static_cast<node_allocator_t&>(rhs));
-			ring_buffer = rhs.ring_buffer;
-			push_count = rhs.push_count;
-			pop_count = rhs.pop_count;
+			if (this != &rhs) {
+				static_cast<node_allocator_t&>(*this) = std::move(static_cast<node_allocator_t&>(rhs));
+				ring_buffer = rhs.ring_buffer;
+				push_count = rhs.push_count;
+				pop_count = rhs.pop_count;
 
-			rhs.ring_buffer = nullptr;
+				rhs.ring_buffer = nullptr;
+			}
+
 			return *this;
 		}
 
@@ -1719,10 +1742,10 @@ namespace iris {
 	};
 
 	namespace impl {
-		template <typename element_t, template <typename...> typename allocator_t, bool enable_memory_fence>
+		template <typename element_t, template <typename...> class allocator_t, bool enable_memory_fence>
 		using sub_queue_t = iris_queue_t<element_t, allocator_t, enable_memory_fence>;
 
-		template <typename element_t, template <typename...> typename allocator_t, bool enable_memory_fence, template <typename...> typename debug_allocator_t = allocator_t>
+		template <typename element_t, template <typename...> class allocator_t, bool enable_memory_fence, template <typename...> class debug_allocator_t = allocator_t>
 		struct node_t : sub_queue_t<element_t, debug_allocator_t, enable_memory_fence> {
 			explicit node_t(size_t init_count) : sub_queue_t<element_t, debug_allocator_t, enable_memory_fence>(init_count), next(nullptr) {}
 			node_t* next; // chain next queue
@@ -1731,7 +1754,7 @@ namespace iris {
 
 	// chain kfifos to make variant capacity.
 	// debug_allocator_t is for bypassing vs 2015's compiler bug.
-	template <typename value_t, template <typename...> typename allocator_t = iris_default_block_allocator_t, template <typename...> typename top_allocator_t = allocator_t, bool enable_memory_fence = true, template <typename...> typename debug_allocator_t = allocator_t>
+	template <typename value_t, template <typename...> class allocator_t = iris_default_block_allocator_t, template <typename...> class top_allocator_t = allocator_t, bool enable_memory_fence = true, template <typename...> class debug_allocator_t = allocator_t>
 	struct iris_queue_list_t : private top_allocator_t<impl::node_t<value_t, allocator_t, enable_memory_fence>>, protected enable_in_out_fence_t<> {
 		using element_t = value_t;
 		using node_t = impl::node_t<element_t, debug_allocator_t, enable_memory_fence>;
@@ -1769,11 +1792,13 @@ namespace iris {
 		}
 
 		iris_queue_list_t& operator = (iris_queue_list_t&& rhs) noexcept {
-			IRIS_ASSERT(static_cast<node_allocator_t&>(*this) == static_cast<node_allocator_t&>(rhs));
-			// just swap pointers.
-			std::swap(push_head, rhs.push_head);
-			std::swap(pop_head, rhs.pop_head);
-			std::swap(iterator_counter, rhs.iterator_counter);
+			if (this != &rhs) {
+				IRIS_ASSERT(static_cast<node_allocator_t&>(*this) == static_cast<node_allocator_t&>(rhs));
+				// just swap pointers.
+				std::swap(push_head, rhs.push_head);
+				std::swap(pop_head, rhs.pop_head);
+				std::swap(iterator_counter, rhs.iterator_counter);
+			}
 
 			return *this;
 		}
@@ -1791,37 +1816,55 @@ namespace iris {
 			}
 		}
 	
-		// preserve space for just one element
-		void preserve() noexcept(noexcept(std::declval<node_allocator_t>().allocate(1))) {
+		template <typename input_element_t>
+		element_t* push(input_element_t&& t) noexcept(noexcept(std::declval<node_t>().push(std::forward<input_element_t>(t)))) {
+			auto guard = in_fence();
+
 			if (push_head->full()) {
 				node_t* p = node_allocator_t::allocate(1);
 				new (p) node_t(iterator_counter);
 				iterator_counter = node_t::step_counter(iterator_counter, element_count);
+				element_t* w = p->push(std::forward<input_element_t>(t));
 
 				// chain new node_t at head.
 				push_head->next = p;
+
+				if (enable_memory_fence) {
+					std::atomic_thread_fence(std::memory_order_release);
+				}
+
 				push_head = p;
+				return w;
+			} else {
+				return push_head->push(std::forward<input_element_t>(t));
 			}
 		}
 
-		template <typename input_element_t>
-		element_t* push(input_element_t&& t) noexcept(noexcept(std::declval<iris_queue_list_t>().preserve()) && noexcept(std::declval<iris_queue_list_t>().emplace(std::forward<input_element_t>(t)))) {
-			auto guard = in_fence();
-			preserve();
-			return emplace(std::forward<input_element_t>(t));
-		}
-
 		template <typename iterator_t>
-		iterator_t push(iterator_t from, iterator_t to) noexcept(noexcept(std::declval<iris_queue_list_t>().push(*from))) {
+		iterator_t push(iterator_t from, iterator_t to) noexcept(noexcept(std::declval<node_t>().push(from, to))) {
 			auto guard = in_fence();
 
 			while (true) {
 				iterator_t next = push_head->push(from, to);
-				if (from == next)
-					return next; // complete
+				if (next == to) {
+					return next;
+				}
 
+				// full
+				node_t* p = node_allocator_t::allocate(1);
+				new (p) node_t(iterator_counter);
+				iterator_counter = node_t::step_counter(iterator_counter, element_count);
+				next = p->push(from, to);
+
+				// chain new node_t at head.
+				push_head->next = p;
+
+				if (enable_memory_fence) {
+					std::atomic_thread_fence(std::memory_order_release);
+				}
+
+				push_head = p;
 				from = next;
-				preserve();
 			}
 		}
 
@@ -1938,7 +1981,32 @@ namespace iris {
 		}
 
 		bool empty() const noexcept {
-			return push_head->empty();
+			if (pop_head->empty()) {
+				if (pop_head != push_head) {
+					if /* constexpr */ (enable_memory_fence) {
+						std::atomic_thread_fence(std::memory_order_acquire);
+					}
+
+					return push_head->empty();
+				} else {
+					return true;
+				}
+			} else {
+				return false;
+			}
+		}
+
+		bool probe(size_t request_size) const noexcept {
+			size_t counter = 0;
+			// sum up all sub queues
+			for (node_t* p = pop_head; p != nullptr; p = p->next) {
+				counter += p->size();
+				if (counter >= request_size) {
+					return true;
+				}
+			}
+
+			return false;
 		}
 
 		size_t size() const noexcept {
@@ -2071,7 +2139,7 @@ namespace iris {
 			using pointer = element_t*;
 			using iterator_category = std::forward_iterator_tag;
 
-			iterator(node_t* n, size_t i) noexcept : current_node(n), it(i) {}
+			iterator(node_t* n = nullptr, size_t i = 0u) noexcept : current_node(n), it(i) {}
 
 			iterator& operator ++ () noexcept {
 				step();
@@ -2173,7 +2241,7 @@ namespace iris {
 			using pointer = element_t*;
 			using iterator_category = std::forward_iterator_tag;
 
-			const_iterator(const node_t* n, size_t i) noexcept : current_node(n), it(i) {}
+			const_iterator(const node_t* n = nullptr, size_t i = 0u) noexcept : current_node(n), it(i) {}
 
 			const_iterator& operator ++ () noexcept {
 				step();
@@ -2294,11 +2362,6 @@ namespace iris {
 			return const_iterator(p, p->end_index());
 		}
 
-		template <typename input_element_t>
-		element_t* emplace(input_element_t&& t) noexcept(noexcept(std::declval<node_t>().push(std::forward<input_element_t>(t)))) {
-			return push_head->push(std::forward<input_element_t>(t));
-		}
-
 	protected:
 		node_t* push_head = nullptr;
 		node_t* pop_head = nullptr; // pop_head is always prior to push_head.
@@ -2342,7 +2405,7 @@ namespace iris {
 			} else {
 				element_t value = std::move(queue.top());
 				queue.pop();
-				return std::move(value);
+				return value;
 			}
 		}
 
@@ -2369,7 +2432,7 @@ namespace iris {
 	};
 
 	// frame adapter for iris_queue_list_t
-	template <typename queue_t, size_t block_size = default_block_size, template <typename...> typename allocator_t = iris_default_block_allocator_t>
+	template <typename queue_t, size_t block_size = default_block_size, template <typename...> class allocator_t = iris_default_block_allocator_t>
 	struct iris_queue_frame_t : protected enable_in_out_fence_t<> {
 		explicit iris_queue_frame_t(queue_t& q) noexcept : queue(q), barrier(q.end()) {}
 
@@ -2439,8 +2502,10 @@ namespace iris {
 		using amount_t = std::array<quantity_t, n>;
 		iris_quota_t(const amount_t& amount) noexcept {
 			for (size_t i = 0; i < n; i++) {
-				quantities[i].store(amount[i]);
+				quantities[i].store(amount[i], std::memory_order_relaxed);
 			}
+
+			std::atomic_thread_fence(std::memory_order_release);
 		}
 
 		bool acquire(const amount_t& amount) noexcept {
@@ -2488,6 +2553,7 @@ namespace iris {
 					amount = m;
 				} else {
 					host = nullptr;
+					amount = amount_t();
 				}
 			}
 

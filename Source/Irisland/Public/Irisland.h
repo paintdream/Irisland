@@ -45,10 +45,35 @@ struct FIrisland
 	IRISLAND_API size_t get_current_thread_index() noexcept;
 	IRISLAND_API bool is_terminated() const noexcept;
 
+	struct task_t
+	{
+		task_t(TFunction<void()>&& f, size_t prior) noexcept : func(std::move(f)) {}
+
+		TFunction<void()> func;
+		task_t* next = nullptr;
+	};
+
 	template <typename F>
-	void queue(F&& func, size_t priority)
+	task_t* new_task(F&& func)
+	{
+		return new task_t(std::forward<F>(func), priority);
+	}
+
+	template <typename F>
+	void queue(F&& func, size_t priority = 0)
 	{
 		Queue(std::forward<F>(func), priority);
+	}
+
+	void queue_task(task_t* task, size_t priority = 0)
+	{
+		Queue(std::move(task->func), priority);
+		delete task;
+	}
+
+	void execute_task(task_t* task) {
+		task->func();
+		delete task;
 	}
 
 private:

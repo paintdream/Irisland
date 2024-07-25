@@ -73,7 +73,7 @@ public:
 
 	void Join()
 	{
-		FWarp::join();
+		FWarp::join([]() { std::this_thread::sleep_for(std::chrono::milliseconds(50));  });
 	}
 
 	bool IsEmpty() const noexcept

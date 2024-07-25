@@ -5,7 +5,7 @@ This software is a C++ 11 Header-Only reimplementation of core part from project
 
 The MIT License (MIT)
 
-copyright (c) 2014-2023 PaintDream
+copyright (c) 2014-2024 PaintDream
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -36,16 +36,15 @@ SOFTWARE.
 namespace iris {
 	template <typename element_t, size_t storage_size = (sizeof(element_t*) * 4 - sizeof(size_t)) / sizeof(element_t)>
 	struct iris_buffer_t {
-		enum : size_t {
-			ext_store_mask = (size_t(1) << (sizeof(size_t) * 8 - 1)), // has external storage?
-			data_view_mask = (size_t(1) << (sizeof(size_t) * 8 - 2)) // is data view?
-		};
+		static constexpr size_t ext_store_mask = (size_t(1) << (sizeof(size_t) * 8 - 1)); // has external storage?
+		static constexpr size_t data_view_mask = (size_t(1) << (sizeof(size_t) * 8 - 2)); // is data view?
 
 		using iterator = element_t*;
 		using const_iterator = const element_t*;
 		using value_type = element_t;
 
 		iris_buffer_t() noexcept : size(0) {
+			buffer = nullptr;
 			static_assert(storage_size >= 3 * sizeof(size_t) / sizeof(element_t), "must has stock storage of at least 3 pointer size.");
 			static_assert(std::is_trivially_constructible<element_t>::value, "must be trivially constructible.");
 			static_assert(std::is_trivially_destructible<element_t>::value, "must be trivially destructible.");
@@ -131,7 +130,10 @@ namespace iris {
 		}
 
 		iris_buffer_t& operator = (const iris_buffer_t& rhs) noexcept(noexcept(std::declval<iris_buffer_t>().copy(rhs))) {
-			copy(rhs);
+			if (this != &rhs) {
+				copy(rhs);
+			}
+
 			return *this;
 		}
 
@@ -505,7 +507,7 @@ namespace iris {
 
 	using iris_bytes_t = iris_buffer_t<uint8_t>;
 
-	template <typename element_t, size_t block_size = default_block_size, template <typename...> typename allocator_t = iris_default_block_allocator_t>
+	template <typename element_t, size_t block_size = default_block_size, template <typename...> class allocator_t = iris_default_block_allocator_t>
 	struct iris_cache_t {
 		iris_buffer_t<element_t> allocate(size_t size, size_t alignment = 16) {
 			size_t pack = allocator.pack_size(alignment);
@@ -569,7 +571,7 @@ namespace iris {
 
 	using bytes_cache_t = iris_cache_t<uint8_t>;
 
-	template <typename element_t, typename base_t = uint8_t, size_t block_size = default_block_size, template <typename...> typename large_allocator_t = std::allocator>
+	template <typename element_t, typename base_t = uint8_t, size_t block_size = default_block_size, template <typename...> class large_allocator_t = std::allocator>
 	struct iris_cache_allocator_t : private large_allocator_t<element_t> {
 		using value_type = element_t;
 		using pointer = element_t*;
